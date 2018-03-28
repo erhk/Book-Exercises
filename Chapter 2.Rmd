@@ -1,0 +1,53 @@
+---
+title: "Book Exercises, Chapter 2"
+author: "Emily H. K."
+date: "19 feb 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+setwd("~/R/R - Datascripts/Comp. Modelling/Book Exercises/Book Exercises")
+
+```
+
+#Questions in Chapter 2
+```{r}
+#Grid approximation question 2M1, page 45
+#define grid
+p_grid <- seq(from = 0, to = 1, length.out = 20)
+#define prior
+prior <- rep(1, 20)
+#calculate likelihood
+likelihood <- dbinom(3, size = 9, prob = p_grid)
+#compute product of likelihood and prior
+unstd.posterior <- likelihood * prior
+#standarize the posterior so it sums to 1
+posterior <- unstd.posterior/sum(unstd.posterior)
+
+#plot
+plot(p_grid, posterior, type = "b", 
+     xlab = "probability of water", ylab ="posterior probability")
+mtext("20 points")
+
+#Now assume prior for p is equal to zero when p < 0.5 and is a positive constant when p >- (smaller or equal) 0.5 
+
+prior <- ifelse(p_grid < 0.5, 0, 1)
+prior <- exp(-5*abs(p_grid - 0.5))
+
+likelihood <- dbinom(3, size = 9, prob = p_grid)
+#compute product of likelihood and prior
+unstd.posterior <- likelihood * prior
+#standarize the posterior so it sums to 1
+posterior <- unstd.posterior/sum(unstd.posterior)
+
+
+plot(p_grid, posterior, type = "b", 
+     xlab = "probability of water", ylab ="posterior probability")
+mtext("20 points")
+
+
+
+```
+
+

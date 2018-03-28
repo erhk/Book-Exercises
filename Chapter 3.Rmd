@@ -1,0 +1,292 @@
+---
+title: "Chapter 3, rethinking stats"
+author: "Emily H. K."
+date: "19 feb 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+setwd("~/R/R - Datascripts/Comp. Modelling/Book Exercises/Book Exercises")
+
+```
+
+## R Markdown
+
+
+Install Rethinking Package and Stan
+```{r}
+Sys.getenv("PATH")
+install.packages("rstan", repos = "https://cloud.r-project.org/", dependencies=TRUE)
+
+fx <- inline::cxxfunction( signature(x = "integer", y = "numeric" ) , '
+	return ScalarReal( INTEGER(x)[0] * REAL(y)[0] ) ;
+' )
+fx( 2L, 5 ) # should be 10
+
+library(rstan)
+
+#Install rethinking
+install.packages(c("coda","mvtnorm", "devtools"))
+install.packages("git2r")
+install.packages("devtools")
+library(devtools)
+devtools::install_github("rmcelreath/rethinking")
+
+```
+
+
+#Chapter 3 - Sampling the Imaginary
+```{r}
+#Performing Bayes's Theorem
+
+#Page 49-50
+
+#PrPV = Prior, Positive|Vampire 
+#PrPM = Prior, positive|Mortal
+#PrV = Prior, vampire
+#PrP = Average probability of a positive test result
+
+PrPV <- 0.95 #Accuracy of detecting positive for vampire
+PrPM <- 0.01 #Error, false positives.
+PrV <- 0.001 #Actual population of vampires
+
+PrP <- PrPV*PrV + PrPM*(1-PrV)
+( PrVP <- PrPV*PrV / PrP)
+#0.08683729 = 8.7% that the suspect is actually a vampire. 
+
+
+```
+
+sampling from a grid approximate posterior p. 52
+```{r}
+#Using the globe tossing experiment
+
+#compute posterior using grid approx.
+p_grid <- seq(from = 0, to = 1, length.out = 1000)
+prior <- rep(1, 1000)
+#got 6 Waters in 9 tosses
+likelihood <- dbinom(6, size = 9, prob = p_grid)
+posterior <- likelihood * prior
+posterior <- posterior / sum(posterior)
+
+#We wish to draw 10000 samples from the posterior. The posterior is like a bag full of values from 0-1. Mor common values will be near the peak (historgram), less common in the tail. The resulting samples will have the same proportions as the exact posterior density, individual values of p will appear in our samples in proportion to the posterior probability of each value.
+
+samples <- sample(p_grid, prob = posterior, size =1e4, replace = T)
+#Samples pulls random values from a vector (list of values) here the p_grid which is the grid of parameter values. The probability of each is given by the posterior, which was just computed.size is amoint of drawn samples (no idea what it means)
+
+plot(samples)
+#plot shows density estimate. See many samples around 0.6, few below 0.2
+
+library(rethinking)
+dens(samples)
+
+#We see that out density is very similar to ideal posterior. the more drawn samples the better plot.
+
+
+```
+
+Sampling to summarize p. 53, 54, 55 
+```{r}
+#When the model has produced a posterior distribution, then it has done its work. We do however need to summarize and analyse the result, posterior distrubtion.
+
+#Example of how to summarize it is on p. 53. The type of interpretation depends on this.
+
+#Overall questions you can ask using samples from the posterior!
+#1) Intervals of defined boundaries
+#2) Intervals of defined probability mass
+#3) Point estimates
+
+#1 Intervals of defined bounadries
+#What is the posterior probability that the proportion of water is less than 0.5.
+#Using grid approx. you can add up all the probabilities where the corresponding parameter value is less than 0.5
+
+sum(posterior[p_grid <0.5])
+#About 17% of the posterior probability is below 0.5.
+
+#Using samples for this calculation. You add up all the samples below 0.5, and then divide the resulting count by samples. You find the frequency for parameters below 0.5
+sum(samples < 0.5)/1e4
+#0.1716, nearly the same result as the grid aproxx.
+
+#You can also ask how much posterior probability lies between 0.5-0.75 using same approach as above
+
+sum(samples > 0.5 & samples< 0.75)/1e4
+#0.5982
+#so about 60% of the posterior prob lies between these.
+
+
+#2 Intervals of defined mass (usually confidence intervals, in case of posterior prob called credible interval)
+
+#These intervals report two parameters values that contain between them a defined amount of posterior probability = probability mass.
+
+#Say you want to find the boundaries for tge lower 80% posterior prob. You know that the interval starts at p = 0, to find where it stops you think of the data as samples, and ask where the 80th percentile lies
+
+quantile(samples, 0.8)
+#80%, 0.7607608
+#We find that the boundaries of the lower 80% of post. prob. exists below parameter values of 0.75(ish)
+
+#We can also look at the middle 80% interval, which would be between 10th and 90th percentiale = 80
+
+quantile(samples, c(0.1, 0.9))
+#10% = 45, 90% = 81
+
+#In the book we refer to these as The percentile interval. They can be misleading. In the book example we observe 3 waters, in 3 tosses with a uniform (flat) prior. The graph shows a max value at the boundary p = 1. We can calculate this with usual form
+
+p_grid <- seq(from = 0, to = 1, length.out = 1000)
+prior <- rep(1,1000)
+likelihood <- dbinom(3, size = 3, prob = p_grid)
+posterior <- likelihood*prior
+posterior <- likelihood/sum(posterior)
+samples <- sample(p_grid, size = 1e4, replace = T, prob = posterior)
+
+#We can find different confidence intervals, like 50% percentile.Use Percentile Interval PI from rethinking package
+PI(samples, prob = 0.5)
+#25% = 0.71, 75% = 0.95
+
+#It assigns 25% below and above the interval, equalling 50%
+
+#Just another example
+PI(samples, prob = 0.4)
+#30% = 0.74, and 70% = 0.91
+
+#This misses out on all the samples that are close to p = 1, which would be the most probable ones. So in decribing the shape of the distribution isnt very good at all. The intervals are misleading.
+
+#another plot in the book, fig. 3.3 p. 57 illustrates the 50% highest posterior density intervals (HPDI). More describtion of this is on p. 56
+HPDI(samples, prob = 0.5)
+#0.5 = 0.84, 0.5 = 1
+
+#This interval captures the parameters with the highest posterior prob., and is also narrower than the other one. 0.16, instead of 17 (in the book its 23)
+#In most cases these two are quite similar. 
+
+
+#In example with less skewed data, like 6 waters in 9 tosses, there wouldnt be a much difference, in these cases it doesnt matter which you pick
+
+
+p_grid <- seq(from = 0, to = 1, length.out = 1000)
+prior <- rep(1,1000)
+likelihood <- dbinom(6, size = 9, prob = p_grid)
+posterior <- likelihood*prior
+posterior <- likelihood/sum(posterior)
+samples <- sample(p_grid, size = 1e4, replace = T, prob = posterior)
+
+PI(samples, prob = 0.5)
+
+HPDI(samples, prob = 0.5)
+
+#3 Point estimates
+
+#So what value should you pick to report. Apparently you don't have to pick a point of estimate. usually it's not even necessary. BUT if you have to produce one from the posterior, you have to ask and answer more questions.
+
+#It is very common to report the highest posterior probability MAP (maximum a posterior estimate)
+#Lets use the code for the 3 waters in 3 tosses
+p_grid[which.max(posterior)]
+#1
+
+#Or if you have samples, you can find the aprox. same point
+chainmode(samples, adj=0.01)
+#0.988
+
+#Find mean or median
+mean(samples)
+median(samples)
+
+#All these are point estimates, so how do you pick one? Page 59
+#You can go beyond these points and use the entire posterior prob. as the estimate choosing a LOSS FUNCTION.
+#The LOSS FUNCTION tells you the cost of using any particular point estimate. Different loss functions = different point estimates.
+
+
+#In a win-loss game, you have to tell which p, proportion of water on earth, is correct. 100kr for the exact, but you lose money if wrong. The loss of money is propertional til the distarnce between the two asnwers. d - p, your answer = d, and correct = p.
+#After we know what the posterior proportion is, how do you maximize your winning. It turns out that the median is best. 
+#So calculating the expected loss for any given decision, means using the posterior to average ouver any uncertainty in the true value, which we dont know what is. Using the models information we use the entire post. dib. We decide that p = 0.5
+#We use the same data as the 3 water, 3 toss for finding values used below.
+p_grid <- seq(from = 0, to = 1, length.out = 1000)
+prior <- rep(1,1000)
+likelihood <- dbinom(3, size = 3, prob = p_grid)
+posterior <- likelihood*prior
+posterior <- likelihood/sum(posterior)
+samples <- sample(p_grid, size = 1e4, replace = T, prob = posterior)
+
+
+
+#This code computes all the weighted average loss , where each loss is weighted by its corresponding posterior prob.
+sum(posterior*abs(0.5-p_grid))
+
+#To repeat this for every possible decision, we use sapply and make a LOSS FUNCTION!!.
+loss <- sapply(p_grid, function(d) sum(posterior*abs(d - p_grid)))
+#Now loss is a symbol that contains the list of loss values for each possible decision d, corresponding to the values in p_grid.
+#Now we can easily find the parameter value that minimizes the loss
+p_grid[which.min(loss)]
+#0.840
+
+#Turns out this is just like the median (surprise, surprise), half mass above and half mass below. Sampling variation gives it a slightly different result.
+median(samples)
+#0.839
+
+#So when we have to decide on a point estimate, a single value summary of the posterior distrubution, we ned to pick a loss function! Look detailed explaination p. 61
+
+#Two most common ones are median and quadratic loss d-p^2 - which leads to posterior mean.
+
+```
+
+#Sampling to simulate prediction p. 61
+```{r}
+#Simulating the model's implied oberservations are usefull for many reasons. For details read p. 61:
+
+#1) Model checking
+
+#2) Software validation
+
+#3) Research design
+
+#4) Forecasting
+
+#Producing simulated observation and do model checks
+#We continue using the 3 water observations, 3 tosses.
+#Because it's simple we know there are only 3 possible observations:
+#0 water, 1 w, 2 w.
+#We use a p = 0.7 which is actually the true proportion of w on earth
+
+#Likelihood
+dbinom(0:2, size = 2, prob = 0.7)
+#9% chance of w = 0, 42% w = 1, 49% w = 2.
+
+#Simulate oberservations using these likelihoods. You can use sample(), or others like r(r stands for random) binom. A sinle observation of w can be sampled like this:
+rbinom(1, size = 2, prob = 0.7)
+
+#Do 10 simulations
+rbinom(10, size = 2, prob = 0.7)
+
+#We generate 100000 dummy oberservations, to verify that each value, 0, 1, 2 appears in properpotion to its likelihood
+
+dummy_w <- rbinom(1e5, size = 2, prob= 0.7)
+table(dummy_w)/1e5
+#0 = 9%, 1 = 42%, 2 = 49%, it does!variance due to simulation variance
+
+#Simulate same but over 9 tosses
+
+dummy_w <- rbinom(1e5, size = 9, prob = 0.7)
+simplehist(dummy_w, xlab ="dummy water count")
+
+#1 Model checking p. 64
+#Data used
+p_grid <- seq(from = 0, to = 1, length.out = 1000)
+prior <- rep(1,1000)
+likelihood <- dbinom(6, size = 9, prob = p_grid)
+posterior <- likelihood*prior
+posterior <- likelihood/sum(posterior)
+samples <- sample(p_grid, size = 1e4, replace = T, prob = posterior)
+
+
+
+#p. 65 Posterior Predictive Distribution:
+#You average all prediction distrubutions together, look at fig 3.6 for good epxplaintion.
+#Doing this leaves a distribution for predictions, but incorporates all uncertainty in posterior distribution for p. 
+
+#How to do the calculations. We simulate predicted oberservations for a single value of p, lets say p = 0.6. Use rbinom to generate binormial samples:
+w <- rbinom(1e4, size = 9, prob = 0.6)
+simplehist(w)
+#To propegate parameter uncertainty into the predictions is replacin the value 0.6 with samples from the posterior
+w <- rbinom(1e4, size = 9, prob = samples)
+simplehist(w)
+```
+

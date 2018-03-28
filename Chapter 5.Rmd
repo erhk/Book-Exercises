@@ -1,0 +1,80 @@
+---
+title: "Chapter 5"
+author: "Emily H. K."
+date: "12 mar 2018"
+output: html_document
+---
+
+```{r}
+library(rethinking)
+data("WaffleDivorce")
+d <- WaffleDivorce
+```
+
+```{r}
+#Standarize predictors, page 125
+d$MedianAgeMarriage.s <- scale(d$MedianAgeMarriage)
+d$Marriage.s <- scale(d$Marriage)
+
+m5.3 <- map(
+  alist(
+    Divorce ~ dnorm(mu, sigma),
+    mu <- a + bR*Marriage.s + bA*MedianAgeMarriage.s,
+    a ~ dnorm(10, 10),
+    bR ~ dnorm(0, 1),
+    bA ~ dnorm(0, 1),
+    sigma ~ dunif(0, 10)
+  ), data=d
+  )
+
+precis(m5.3)
+
+#POSTERIOR PREDICTION PLOT
+#Sim predictions averagung over posterior p. 132
+mu <- link(m5.3)
+
+#summarize samples across cases
+mu.mean <- apply(mu, 2, mean)
+mu.PI <- apply(mu, 2, PI)
+
+#Simulate obersevations
+divorce.sim <- sim(m5.3, n=1e4)
+divorce.PI <- apply(divorce.sim, 2, PI)
+
+#plot simulations
+plot(mu.mean ~ d$Divorce, col = rangi2, ylim=range(mu.PI),
+     xlab="Observed divorce", ylab = "Predicted divorce")
+abline(a=0, b=1, lty=2)
+for( i in 1:nrow(d))
+  lines(rep(d$Divorce[i],2), c(mu.PI[2,i]),
+        col = rangi2)
+```
+
+
+#Milk example p. 135 - Masked Relationships
+```{r}
+data("milk")
+d1 <- milk
+str(d1)
+
+#Sort neocortex because it has NA's, fix dataset
+dcc <- d1[ complete.cases(d1), ]
+
+
+m5.5 <- map(
+  alist(
+    kcal.per.g ~ dnorm(mu, sigma), 
+    mu <- a+bn*neocortex.perc,
+    a ~ dnorm(0, 100),
+    bn ~ dnorm(0, 1),
+    sigma ~ dunif(0,1)
+  ),
+  data = dcc
+)
+
+precis(m5.5, digits=5)
+
+
+
+```
+

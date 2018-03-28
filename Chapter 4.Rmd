@@ -1,0 +1,231 @@
+---
+title: "Chapter 4"
+author: "Emily H. K."
+date: "26 feb 2018"
+output: html_document
+---
+
+```{r}
+setwd("~/R/R - Datascripts/Comp. Modelling/Book Exercises/Book Exercises")
+library(rethinking)
+```
+
+#Normal by addition p. 72
+Simulate a 1000 people coin flipping 16 times, moving 1 step either left or right from the middle (of a football field). -1 and 1 
+```{r}
+pos <- replicate(1000, sum(runif(16, -1, 1)))
+
+hist(pos)
+
+plot(density(pos))
+```
+
+#Normal by mulitplication p. 74
+Any process that adds together random values from the same distribution converges to normal dirtibution. When we begin to add these fluctuation from the average value together they cancel each other out. This also happens when you mulitply them. Looking at this example.
+
+Sample 12 random numbers between 1.0-1.1. Each represent a proportional growth in size. 1.0 means no growth, 1.1 means a 10% increase. Using replicate we can generate 10000 of them
+```{r}
+prod(1 + runif(12, 0, 0.1))
+growth <- replicate(10000, prod(1 + runif(12, 0, 0.1)))
+dens(growth, norm.comp = TRUE)
+
+#Verify that interacting growth deviations converge at normal distribution if they're suffiently small.
+
+big <- replicate(10000, prod(1+runif(12,0,0.5)))
+small <- replicate(10000, prod(1+runif(12,0,0.01)))
+
+dens(big, norm.comp = T) 
+dens(small, norm.comp = T)
+```
+
+Large distrubitions tend to not follow gaussian distributions, but when following the log scale they do. (I guess this is why you transform to logs?)
+
+```{r}
+log.big <- replicate(1000, log(prod(1+runif(12,0,0.5))))
+dens(log.big, norm.comp = T)# Very big difference from the "big" example
+
+#Adding logs is the equivalent of multiplying the original numbers.
+```
+
+#Brief refresher of Bayesian Theorem in model p. 78
+
+```{r}
+w <- 6; n <- 9; dens <- 100 #amount of data point;
+p_grid <- seq(from=0, to=1, length.out = dens)
+posterior <- dbinom(w,n,p_grid) * dunif(p_grid, 0, 1)
+posterior <- posterior/sum(posterior)
+plot(posterior)
+
+#Better plot
+plot=data.frame(grid=p_grid,posterior=posterior,prior=prior,likelihood=likelihood)
+ggplot(plot,aes(grid,posterior))+  geom_point()+geom_line()+theme_classic()+  geom_line(aes(grid,prior/dens),color='red')+ ggtitle("Example") + xlab("probability of knowledge")+ ylab("posterior probability")
+```
+
+#The actual exercise for chapter 4. P. 79-
+
+```{r}
+#Use dataset Howell1 from rethinking package
+data("Howell1")
+df <- Howell1
+
+str(df)
+
+#We're working with the height column - just a regular vector(list). 
+df$height #$ means extract height from df
+
+#Remove height for people under 18, we only want the adults, create a subset
+#[row, column], leave a speace gives all that you leave blank. Like 18,  gives all rows that contain ages equal or above 18 and all columns. Or [3, ] ives all columns at row 3. 
+df2 <- df[df$age >= 18, ]
+
+#plot distribution
+
+dens(df2$height)
+
+#PAGE 82
+#ASK RICCARDO ABOUT THIS CODE BIT!!!!!!____________________________!!!!_______________________
+#Settin the priors, mean and SD
+#We set a prior centered around 178 +- 40, (because the author is that tall and thinks it makes sense.. i dunno), and covers a wide range of human heights.
+
+#<Mean
+curve(dnorm(x, 178, 20), from =100, to=250)
+
+#SD
+#We pick 50cm as an upper bound
+curve(dnorm(x, 0, 50), from = -10, to =60)
+
+
+#Simulate heights from the prior
+sample_mu <- rnorm(1e4, 178, 20)
+sample_sigma <- runif(1e4, 0, 50)
+prior_h <- rnorm(sample_mu, sample_sigma)
+dens(prior_h)
+#Expected distribution of heights, averaged over priors. Not gaussian. - it is not empiracal, but just a distribution of plausiblities of different heights before seing the data.
+```
+
+#Grid approximations of posterior deistribution. P. 84.
+```{r}
+#This code makes no sense yet
+
+mu.list <- seq(from=140, to = 160, length.out = 200)
+sigma.list <- seq(from=4, to=9, length.out = 200)
+post <- expand.grid(mu = mu.list, sigma=sigma.list)
+post$LL <- sapply(1:nrow(post), function(i) sum(dnorm(
+  df2$height, 
+  mean=post$mu[i],
+  sd = post$sigma[i],
+  log = TRUE)))
+post$prod <- post$LL + dnorm(post$mu, 178, 20, TRUE) +
+  dunif(post$sigma, 0, 50, TRUE)
+post$prob <- exp(post$prod - max(post$prod))
+post$prob
+
+#Visualise it
+contour_xyz(post$mu, post$sigma, post$prob)
+
+image_xyz(post$mu, post$sigma, post$prob)
+
+#Sampling from posterior
+#We want to sample 10000
+sample.rows <- sample(1:nrow(post), size =1e4, replace = TRUE,
+                                    prob =post$prob)
+sample.mu <- post$mu[sample.rows]
+sample.sigma <- post$sigma[sample.rows]
+
+#plot it
+#Looks different from book???
+plot(sample.mu, sample.sigma, cex=0.5, pch=16, col=col.alpha(rangi2, 0.1))
+
+dens(sample.mu)
+dens(sample.sigma)
+
+HPDI(sample.mu)
+HPDI(sample.sigma)
+
+#Sample less, look at 20 heights
+df3 <- sample(df2$height, size=20)
+
+#Do same as before but only 20 heights rather than full dataset
+mu.list <- seq(from=150, to=170, length.out = 200)
+sigma.list<- seq(from=4, to=20, length.out = 200)
+
+post2 <-expand.grid(mu=mu.list, sigma=sigma.list)
+post2$LL <- sapply(1:nrow(post2), function(i)
+  sum(dnorm(df3, mean = post2$mu[i], sd=post2$sigma[i], log=TRUE)))
+
+post2$prod <- post2$LL + dnorm(post2$mu, 178, 20, TRUE) + 
+  dunif(post2$sigma, 0, 50, TRUE)
+post2$prob <- exp(post2$prod - post2$prod)
+sample2.rows <- sample(1:nrow(post2),size = 1e4, replace = TRUE, prob=post2$prob )
+sample2.mu <- post2$mu[ sample2.rows]
+sample2.sigma <- post2$sigma[ sample2.rows]
+plot(sample2.mu, sample2.sigma, cex = 0.5, col=col.alpha(rangi2, 0.1), xlab ="mu", ylab ="sigma", pch=16)
+
+dens(sample2.sigma, norm.comp = TRUE)
+
+```
+
+#Qudractic approxmiations
+```{r}
+d<- Howell1
+d2 <- d[d$age >= 18, ]
+
+flist <- alist(
+  height ~ dnorm(mu, sigma),
+  mu ~ dnorm(178, 20), 
+  sigma ~ dnorm(0,50)
+)
+#Making lists, just a random bit from p. 88.
+#Using list() allows you to run function on your list, like mean(d2$height) is evaluated in a numeric value. Using alist() stops executing the code.
+#ex.
+start <- list(
+  mu=mean(df2$height),
+  sigma = sd(df2$height)
+)
+
+#Using map and precis
+m4.1 <- map(flist, data = d2)
+precis(m4.1)
+
+#Make SD more narrow, chaning its prior
+
+m4.2 <- map(
+  alist(
+    height ~ dnorm(mu, sigma),
+    mu ~ dnorm(178, 0.1), 
+    sigma ~ dunif(0,50)
+    ),
+  data = d2)
+
+precis(m4.2)
+
+#Variance - covariance p.89-90
+
+vcov(m4.1)
+#These two, mean and SD don't covary at all. Both are very close to zero.
+post <- extract.samples(m4.1, n=1e4)
+head(post)
+#Results are very close to map values
+
+#finding SD is hard in qudractic aprox. So use log for better approx of uncertainty. P 91
+#Using exp constrains the value to be strictly positive
+m4.1_logsigma <- map(
+  alist(
+    height ~ dnorm(mu, exp(log_sigma)),
+    mu ~ dnorm(178, 20),
+    log_sigma ~ dnorm(2, 10)
+  ), data=d2)
+  
+
+```
+
+#Adding predictors p. 92
+
+```{r}
+
+#See how strongly height and weight covary
+plot(df2$height ~ d2$weight)
+
+
+
+```
+
