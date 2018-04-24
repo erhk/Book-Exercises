@@ -1,0 +1,164 @@
+---
+title: "Chapter 10"
+author: "Emily H. K."
+date: "15 apr 2018"
+output: html_document
+---
+
+```{r}
+setwd("~/R/R - Datascripts/Comp. Modelling/Book Exercises/Book Exercises")
+library(rethinking)
+```
+
+
+#Chimp example p. 293
+
+```{r}
+data("chimpanzees")
+d <- chimpanzees
+
+#Build 3 models to compare model to.
+
+#Intercept only model
+m10.1 <- map(
+  alist(
+    pulled_left ~ dbinom(1 , p),
+    logit(p) <- a,
+    a~ dnorm(0,10)
+  ),
+  data = d)
+
+precis(m10.1)
+
+#Precis output
+#mean, convert to probability
+logistic(0.32)
+
+#interval
+logistic(c(0.18, 0.46))
+
+#Model try to predict lever pulls by prosoc_left, ignoring condition
+m10.2 <-map(
+  alist(
+    pulled_left ~ dbinom(1,p),
+    logit(p) <- a + bp*prosoc_left,
+    a~ dnorm(0,10),
+    bp ~ dnorm(0,10)
+  ), data = d
+) 
+precis(m10.2)
+
+#Model including condition
+m10.3 <- map(
+  alist(
+    pulled_left ~dbinom(1, p),
+    logit(p) <- a + (bp+bpC*condition)*prosoc_left,
+    a~ dnorm(0,10),
+    bp~dnorm(0,10),
+    bpC~dnorm(0,10)
+  ), data = d
+)
+
+precis(m10.3)
+
+#clean for NA
+d2 <- d
+d2$recipient <- NULL
+
+#Map stan model
+
+m10.3stan <- map2stan(m10.3, data=d2, iter = 1e4, warmup = 1000)
+precis(m10.3stan)
+
+#Gaussian distribution, once model is modified for individual variation it will no longer be gaussian
+pairs(m10.3stan)
+
+
+unique(d$actor)
+
+#Make map model including individual difference by adding actor[i], to intercept and add a prior
+
+m10.4 <- map2stan(
+  alist(
+    pulled_left ~ dbinom(1,p),
+    logit(p) <- a[actor] + (bp + bpC*condition)*prosoc_left,
+    a[actor] ~ dnorm(0,10),
+    bp ~ dnorm(0,10),
+    bpC ~ dnorm(0,10)
+  ), data = d2, chains=2, iter = 2500, warmup = 500
+)
+
+precis(m10.4, depth = 2)
+
+#Check if posterior is gaussian, extract samples and plot a density plot for actor 2. Actor 2 always pulled left-hand lever in all conditions. 
+post <- extract.samples(m10.4)
+str(post)
+
+dens(post$a[, 2])
+
+#Graph plot for individual chimps on p. 301
+
+
+#Aggregate binomial: Calculate number of times each chimp pulled the left hand lever for each combination of predictor values. 4 combinations - 4 rows pr chimp. Chimp 2 always pulled left. So it gets the count of 18, because there were 18 trials pr. animal. So chimp 2 pulls count up to 18 pr. combination.
+
+#Aggregate chimps
+d <- chimpanzees
+d.aggre <- aggregate(d$pulled_left, 
+                     list(prosoc_left = d$prosoc_left, condition = d$condition, actor = d$actor ), sum)
+
+m10.5 <- map(
+  alist(
+    x ~ dbinom(18, p),
+    logit(p) <- a + (bp + bpC*condition)*prosoc_left,
+    a ~ dnorm(0,10),
+    bp ~ dnorm(0,10),
+    bpC ~ dnorm(0,10)
+  ), data = d.aggre
+)
+precis(m10.5)
+```
+
+
+#Gender bias in uni admissions p. 304. Problem understanding p. 305.
+
+```{r}
+
+data("UCBadmit")
+df <- UCBadmit
+
+#Two models, one including admit as a function of gender, and one that models admit without gender.
+
+#applications[i], number of applications on row i
+#m dummy variable for male
+
+#Gender model
+df$male <- ifelse(df$applicant.gender == "male", 1, 0) #male = 0
+
+m10.6 <- map(
+  alist(
+    admit ~ dbinom(applications, p),
+    logit(p) <- a + bm*male,
+    a ~ dnorm(0,10),
+    bm ~ dnorm(0,10)
+  ), data = df
+)
+
+#No gender model, intercept model
+
+m10.7 <- map(
+  alist(
+    admit ~ dbinom(applications, p),
+    logit(p) <- a,
+    a ~ dnorm(0,10)
+  ), data = df
+)
+precis(m10.6)
+compare(m10.6, m10.7)
+#adding male increased the expected out-of-sample deviance by a large amount.. apparently?? Asked for help on rethinking github.
+exp(0.61)
+
+exp(-0.1)
+
+
+```
+
