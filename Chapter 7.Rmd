@@ -1,0 +1,323 @@
+---
+title: "Chapter 7"
+author: "Emily H. K."
+date: "15 apr 2018"
+output: html_document
+---
+
+```{r}
+setwd("~/R/R - Datascripts/Comp. Modelling/Book Exercises/Book Exercises")
+library(rethinking)
+```
+
+#Africa Interaction p. 211
+```{r}
+data(rugged)
+d <- rugged
+```
+
+#Bad geography tends to affect economic performance in countries outside of Africa
+```{r}
+#Log GDP pr. capita in year 2000
+
+#Make log version of outcome
+d$log_gdp <- log(d$rgdppc_2000)
+
+#Extract countries with GDP data
+dd <- d[complete.cases(d$rgdppc_2000), ]
+
+
+#Split data in Africa and Non-Africa
+d.A1 <- dd[dd$cont_africa==1, ] #Africa
+d.A0 <- dd[dd$cont_africa==0, ] #Not Africa
+```
+
+#Fit Regression model
+```{r}
+#African countries
+m7.1 <- map(
+  alist(
+    log_gdp ~ dnorm(mu, sigma),
+    mu <- a + bR*rugged,
+    a ~ dnorm(8, 100),
+    bR ~ dnorm(0, 1),
+    sigma ~ dunif(0,10)
+  
+  ), 
+  data = d.A1)
+
+precis(m7.1)
+
+#Non African countries
+m7.2 <- map(
+  alist(
+    log_gdp ~ dnorm(mu, sigma),
+    mu <- a + bR*rugged,
+    a ~ dnorm(8, 100),
+    bR ~ dnorm(0, 1),
+    sigma ~ dunif(0,10)
+  
+  ), 
+  data = d.A0)
+
+precis(m7.2)
+
+#Issues described on page 214.
+```
+
+#Addind dummy variable to it doesn't work - categorical variable cont_Africa
+```{r}
+#do an lm on log_gdp for reuggedness on entire dataset
+m7.3 <- map(
+  alist(
+    log_gdp ~ dnorm(mu, sigma),
+    mu <- a + bR*rugged,
+    a ~ dnorm(8, 100),
+    bR ~ dnorm(0, 1),
+    sigma ~ dunif(0,10)
+  
+  ), 
+  data = dd)
+
+precis(m7.3)
+
+#Do this with dummy vairble for African nations
+m7.4 <- map(
+  alist(
+    log_gdp ~ dnorm(mu, sigma),
+    mu <- a + bR*rugged + bA*cont_africa,
+    a ~ dnorm(8, 100),
+    bR ~ dnorm(0, 1),
+    bA ~ dnorm(0,1),
+    sigma ~ dunif(0,10)
+  
+  ), 
+  data = dd)
+
+precis(m7.4)
+
+#Compare models
+
+compare(m7.3, m7.4)
+
+#Plot to see it doesn't manage different slopes inside and outside Africa
+
+rugged.seq <- seq(from=0, to=8, by =0.25)
+
+#Compute mu over samples fixing not africa (0) and africa cont (1).
+mu.NotAfrica <- link(m7.4, data = data.frame(cont_africa=0, rugged= rugged.seq))
+mu.Africa <- link(m7.4, data = data.frame(cont_africa=1, rugged=rugged.seq))
+
+#summarize to means and intervals
+mu.NotAfrica.mean <- apply(mu.NotAfrica, 2, mean)
+mu.NotAfrica.PI <- apply(mu.NotAfrica, 2, PI, prob = 0.97)
+mu.Africa.mean <- apply(mu.Africa, 2, mean)
+mu.Africa.PI <- apply(mu.Africa, 2, PI, prob = 0.97)
+
+#Plot it
+plot(log_gdp ~ rugged, dd, col=rangi2 , ylab="log GDP year 2000" ,
+    xlab="Terrain Ruggedness Index" )
+mtext( "African nations" , 3 )
+#Draw map lines
+lines(rugged.seq, mu.NotAfrica.mean, col="cadetblue" )
+lines(rugged.seq, mu.Africa.mean, col="cadetblue4" )
+#Draw PI region for lines
+shade(mu.NotAfrica.PI, rugged.seq, col=col.alpha("cadetblue2", 0.3))
+shade(mu.Africa.PI, rugged.seq, col=col.alpha("cadetblue4", 0.3))
+
+#Model shows that including the african nations as a dummy variable has no effect on the slopes
+```
+
+#Create interaction p. 216
+```{r}
+#Make new model including a new linear function in our model that accounts for the slope between GDP and ruggedness. The function says that the slope between GDP and ruggedness is conditional on whether or not the a nation is african
+
+m7.5 <- map(
+  alist(
+    log_gdp ~ dnorm(mu, sigma),
+    mu <- a + gamma*rugged + bA*cont_africa,
+    gamma <- bR + bAR*cont_africa,
+    a ~ dnorm(8, 100),
+    bA ~ dnorm(0, 1),
+    bR ~ dnorm(0,1),
+    bAR ~ dnorm(0,1),
+    sigma ~ dunif(0,10)
+  ), data = dd
+)
+
+precis(m7.5)
+
+#find mean for gamme, add mean of bR and bAR. -0,18*0,35 p. 222
+
+```
+
+
+#Tulip data. p. 226
+```{r}
+data("tulips")
+d <- tulips
+str(d)
+
+#Blooms outcome
+#Shade and water predictors
+
+#Non interaction model
+
+m7.6 <- map(
+  alist(
+    blooms ~ dnorm(mu, sigma),
+    mu <- a + bW*water + bS*shade,
+    a ~ dnorm(0,100),
+    bW ~ dnorm(0,100),
+    bS ~ dnorm(0,100),
+    sigma ~ dunif(0,100)
+  ),
+  data = d
+)
+
+#We get an error, try to fix it p. 228
+#Methods of optimizing the data, ex. R's optim
+#map BFGS
+#Nelder-Mead
+#SANN (simulated annealing)
+#Or rescale
+#Pass control list increasing number of iterations
+
+m7.6 <- map(
+  alist(
+    blooms ~ dnorm(mu, sigma),
+    mu <- a + bW*water + bS*shade,
+    a ~ dnorm(0,100),
+    bW ~ dnorm(0,100),
+    bS ~ dnorm(0,100),
+    sigma ~ dunif(0,100)
+  ),
+  data = d,
+  method = "Nelder-Mead",
+  control = list(maxit=1e4)
+)
+
+#Interaction model
+m7.7 <- map(
+  alist(
+    blooms ~ dnorm(mu, sigma),
+    mu <- a + bW*water + bS*shade + bSW*water*shade,
+    a ~ dnorm(0,100),
+    bW ~ dnorm(0,100),
+    bS ~ dnorm(0,100),
+    bSW ~ dnorm(0,100),
+    sigma ~ dunif(0,100)
+  ),
+  data = d,
+  method = "Nelder-Mead",
+  control = list(maxit=1e4)
+)
+
+#Look at estimates p. 229
+coeftab(m7.6, m7.7)
+
+#m7.6 precis
+precis(m7.6)
+
+precis(m7.7)
+
+
+#Center variables and reestimate models
+
+d$water.s <- scale(d$water)
+d$shade.s <- scale(d$shade)
+
+d$water.c <- d$water - mean(d$water)
+d$shade.c <- d$shade - mean(d$shade)
+
+
+#No interaction model
+m7.8 <- map(
+  alist(
+    blooms ~ dnorm(mu, sigma),
+    mu <- a + bW*water.c + bS*shade.c,
+    a ~ dnorm(130,100),
+    bW ~ dnorm(0,100),
+    bS ~ dnorm(0,100),
+    sigma ~ dunif(0,100)
+  ),
+  data = d,
+  start=list(a=mean(d$blooms), bW=0,bS=0, sigma=sd(d$blooms))
+)
+
+#Scaling changes output by quite a bit
+m7.8.s <- map(
+  alist(
+    blooms ~ dnorm(mu, sigma),
+    mu <- a + bW*water.s + bS*shade.s,
+    a ~ dnorm(130,100),
+    bW ~ dnorm(0,100),
+    bS ~ dnorm(0,100),
+    sigma ~ dunif(0,100)
+  ),
+  data = d,
+  start=list(a=mean(d$blooms), bW=0,bS=0, sigma=sd(d$blooms))
+
+  )
+
+precis(m7.8)
+precis(m7.8.s)
+
+
+#Interaction model
+m7.9 <- map(
+  alist(
+    blooms ~ dnorm(mu, sigma),
+    mu <- a + bW*water.c + bS*shade.c + bSW*water.c*shade.c,
+    a ~ dnorm(130,100),
+    bW ~ dnorm(0,100),
+    bS ~ dnorm(0,100),
+    bSW ~ dnorm(0,100),
+    sigma ~ dunif(0,100)
+  ),
+  data = d,
+  start=list(a=mean(d$blooms), bW=0,bS=0, bSW= 0, sigma=sd(d$blooms))
+
+  )
+
+coeftab(m7.8, m7.9)
+
+#For easier interpretation create a triptych, 3 graphs in same panel. Loop over water for each value of water, 1, -1, 0 <- they got scaled
+
+par(mfrow=c(1,3))
+shade.seq <- -1:1
+
+#Interaction plots
+for( w in -1:1){
+  dt <- d[d$water.c == w, ]
+  plot(blooms ~ shade.c, data = dt, col = rangi2,
+       main=paste("water.c = water", w), xaxp=c(-1,1,2), ylim=c(0,362),
+       xlab="centered shade")
+  mu <- link(m7.9, data=data.frame(water.c=w, shade.c=shade.seq))
+  mu.mean <- apply(mu, 2, mean)
+  mu.PI <- apply(mu, 2, PI, prob=0.97)
+  lines(shade.seq, mu.mean)
+  lines(shade.seq, mu.PI[1, ], lty=2)
+  lines(shade.seq, mu.PI[2, ], lty=2)
+  
+}
+
+#No interaction model plots
+for( w in -1:1){
+  dt <- d[d$water.c == w, ]
+  plot(blooms ~ shade.c, data = dt, col = rangi2,
+       main=paste("water.c = water", w), xaxp=c(-1,1,2), ylim=c(0,362),
+       xlab="centered shade")
+  mu <- link(m7.8, data=data.frame(water.c=w, shade.c=shade.seq))
+  mu.mean <- apply(mu, 2, mean)
+  mu.PI <- apply(mu, 2, PI, prob=0.97)
+  lines(shade.seq, mu.mean)
+  lines(shade.seq, mu.PI[1, ], lty=2)
+  lines(shade.seq, mu.PI[2, ], lty=2)
+  
+}
+
+
+
+
+```
